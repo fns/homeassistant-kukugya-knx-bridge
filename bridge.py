@@ -31,13 +31,27 @@ class BridgeEvent:
     data: dict[str, Any]
 
 
+@dataclass(slots=True)
+class EntitySnapshot:
+    entity_id: str
+    domain: str
+    state: Any
+    attributes: dict[str, Any]
+    last_changed: str | None
+    last_updated: str | None
+    context: dict[str, Any] | None
+
+
 class KukugyaKnxBridge:
     def __init__(self) -> None:
         options = self._load_options()
         self.homeassistant_url = str(options.get("homeassistant_url") or DEFAULT_OPTIONS["homeassistant_url"]).strip()
         self.bind_host = str(options.get("bind_host") or DEFAULT_OPTIONS["bind_host"]).strip()
         self.bind_port = int(options.get("bind_port") or DEFAULT_OPTIONS["bind_port"])
-        self.event_buffer: Deque[BridgeEvent] = deque(maxlen=int(options.get("event_buffer_size") or DEFAULT_OPTIONS["event_buffer_size"]))
+        self.event_buffer: Deque[BridgeEvent] = deque(
+            maxlen=int(options.get("event_buffer_size") or DEFAULT_OPTIONS["event_buffer_size"])
+        )
+        self.entities: dict[str, EntitySnapshot] = {}
         self._session: ClientSession | None = None
         self._ha_task: asyncio.Task[None] | None = None
         self._ha_connected = False
@@ -59,14 +73,97 @@ class KukugyaKnxBridge:
     def token(self) -> str:
         return os.environ.get("SUPERVISOR_TOKEN", "").strip()
 
-    def snapshot(self, limit: int = 200) -> list[dict[str, Any]]:
-        items = list(self.event_buffer)[-max(1, limit) :]
-        return [asdict(item) for item in items]
+    def _now(self) -> str:
+        return datetime.now(timezone.utc).isoformat()
 
     def _record(self, event_type: str, data: dict[str, Any]) -> None:
-        now = datetime.now(timezone.utc).isoformat()
+        now = self._now()
         self.event_buffer.append(BridgeEvent(time_fired=now, event_type=event_type, data=data))
         self._last_seen_at = now
+
+    def _entity_snapshot_from_state(self, state: dict[str, Any]) -> EntitySnapshot:
+        entity_id = str(state.get("entity_id") or "")
+        domain = entity_id.split(".", 1)[0] if "." in entity_id else ""
+        attributes = state.get("attributes") if isinstance(state.get("attributes"), dict) else {}
+        context = state.get("context") if isinstance(state.get("context"), dict) else None
+        return EntitySnapshot(
+            entity_id=entity_id,
+            domain=domain,
+            state=state.get("state"),
+            attributes=attributes,
+            last_changed=state.get("last_changed"),
+            last_updated=state.get("last_updated"),
+            context=context,
+        )
+
+    def _apply_state_changed(self, data: dict[str, Any]) -> None:
+        entity_id = str(data.get("entity_id") or "")
+        new_state = data.get("new_state")
+        old_state = data.get("old_state") if isinstance(data.get("old_state"), dict) else None
+        normalized: dict[str, Any] = {"entity_id": entity_id}
+        if old_state:
+            normalized["old_state"] = old_state.get("state")
+        if isinstance(new_state, dict):
+            normalized["new_state"] = new_state.get("state")
+            normalized["attributes"] = new_state.get("attributes") if isinstance(new_state.get("attributes"), dict) else {}
+            normalized["last_changed"] = new_state.get("last_changed")
+            normalized["last_updated"] = new_state.get("last_updated")
+            normalized["context"] = new_state.get("context") if isinstance(new_state.get("context"), dict) else None
+            self.entities[entity_id] = self._entity_snapshot_from_state(new_state)
+        elif entity_id:
+            self.entities.pop(entity_id, None)
+        self._record("state_changed", normalized)
+
+    def _apply_knx_event(self, data: dict[str, Any]) -> None:
+        normalized = {
+            "source": data.get("source"),
+            "destination": data.get("destination"),
+            "direction": data.get("direction"),
+            "telegramtype": data.get("telegramtype"),
+            "value": data.get("value"),
+            "data": data.get("data"),
+        }
+        self._record("knx_event", normalized)
+
+    def snapshot_events(
+        self,
+        *,
+        limit: int = 200,
+        event_type: str | None = None,
+    ) -> list[dict[str, Any]]:
+        items = list(self.event_buffer)[-max(1, limit) :]
+        if event_type:
+            items = [item for item in items if item.event_type == event_type]
+        return [asdict(item) for item in items]
+
+    def snapshot_entities(
+        self,
+        *,
+        limit: int = 500,
+        domain: str | None = None,
+        state: str | None = None,
+        query: str | None = None,
+    ) -> list[dict[str, Any]]:
+        items = list(self.entities.values())
+        if domain:
+            items = [item for item in items if item.domain == domain]
+        if state:
+            items = [item for item in items if str(item.state) == state]
+        if query:
+            query_lc = query.lower()
+            items = [
+                item
+                for item in items
+                if query_lc in item.entity_id.lower()
+                or query_lc in json.dumps(item.attributes, ensure_ascii=False, default=str).lower()
+                or query_lc in str(item.state).lower()
+            ]
+        items = items[: max(1, limit)]
+        return [asdict(item) for item in items]
+
+    def get_entity(self, entity_id: str) -> dict[str, Any] | None:
+        entity = self.entities.get(entity_id)
+        return asdict(entity) if entity else None
 
     async def start(self) -> None:
         timeout = ClientTimeout(total=30)
@@ -82,6 +179,26 @@ class KukugyaKnxBridge:
         if self._session:
             await self._session.close()
 
+    async def _authenticate(self, ws: Any) -> None:
+        if not self.token:
+            raise RuntimeError("SUPERVISOR_TOKEN is missing")
+        auth_msg = await ws.receive()
+        if auth_msg.type != WSMsgType.TEXT:
+            raise RuntimeError("Home Assistant websocket did not request auth")
+        auth_payload = json.loads(auth_msg.data)
+        if auth_payload.get("type") != "auth_required":
+            raise RuntimeError(f"Unexpected websocket auth prelude: {auth_payload}")
+        await ws.send_json({"type": "auth", "access_token": self.token})
+        auth_result = await ws.receive_json()
+        if auth_result.get("type") != "auth_ok":
+            raise RuntimeError(f"Home Assistant auth failed: {auth_result}")
+
+    async def _subscribe(self, ws: Any, message_id: int, event_type: str) -> None:
+        await ws.send_json({"id": message_id, "type": "subscribe_events", "event_type": event_type})
+        response = await ws.receive_json()
+        if not response.get("success", False):
+            raise RuntimeError(f"Could not subscribe to {event_type}: {response}")
+
     async def _ha_call_service(
         self,
         *,
@@ -92,28 +209,16 @@ class KukugyaKnxBridge:
     ) -> dict[str, Any]:
         if not self._session:
             raise RuntimeError("Bridge session is not ready")
-        if not self.token:
-            raise RuntimeError("SUPERVISOR_TOKEN is missing")
         async with self._session.ws_connect(self.homeassistant_url, heartbeat=30) as ws:
-            auth_msg = await ws.receive()
-            if auth_msg.type != WSMsgType.TEXT:
-                raise RuntimeError("Home Assistant websocket did not request auth")
-            auth_payload = json.loads(auth_msg.data)
-            if auth_payload.get("type") != "auth_required":
-                raise RuntimeError(f"Unexpected websocket auth prelude: {auth_payload}")
-            await ws.send_json({"type": "auth", "access_token": self.token})
-            auth_result = await ws.receive_json()
-            if auth_result.get("type") != "auth_ok":
-                raise RuntimeError(f"Home Assistant auth failed: {auth_result}")
-            message_id = 1
-            payload: dict[str, Any] = {"id": message_id, "type": "call_service", "domain": domain, "service": service}
+            await self._authenticate(ws)
+            payload: dict[str, Any] = {"id": 1, "type": "call_service", "domain": domain, "service": service}
             if target:
                 payload["target"] = target
             if service_data:
                 payload["service_data"] = service_data
             await ws.send_json(payload)
             response = await ws.receive_json()
-            if not response.get("success", False):
+            if response.get("type") != "result" or not response.get("success", False):
                 raise RuntimeError(f"Home Assistant service call failed: {response}")
             return response
 
@@ -125,23 +230,12 @@ class KukugyaKnxBridge:
                     await asyncio.sleep(1)
                     continue
                 async with self._session.ws_connect(self.homeassistant_url, heartbeat=30) as ws:
-                    auth_msg = await ws.receive()
-                    if auth_msg.type != WSMsgType.TEXT:
-                        raise RuntimeError("Home Assistant websocket did not request auth")
-                    auth_payload = json.loads(auth_msg.data)
-                    if auth_payload.get("type") != "auth_required":
-                        raise RuntimeError(f"Unexpected websocket auth prelude: {auth_payload}")
-                    await ws.send_json({"type": "auth", "access_token": self.token})
-                    auth_result = await ws.receive_json()
-                    if auth_result.get("type") != "auth_ok":
-                        raise RuntimeError(f"Home Assistant auth failed: {auth_result}")
+                    await self._authenticate(ws)
                     self._ha_connected = True
                     self._last_error = None
                     backoff = 1
-                    await ws.send_json({"id": 1, "type": "subscribe_events", "event_type": "state_changed"})
-                    await ws.receive_json()
-                    await ws.send_json({"id": 2, "type": "subscribe_events", "event_type": "knx_event"})
-                    await ws.receive_json()
+                    await self._subscribe(ws, 1, "state_changed")
+                    await self._subscribe(ws, 2, "knx_event")
                     self._record("bridge_connected", {"homeassistant_url": self.homeassistant_url})
                     async for message in ws:
                         if message.type != WSMsgType.TEXT:
@@ -152,7 +246,12 @@ class KukugyaKnxBridge:
                         event = payload.get("event") or {}
                         event_type = str(event.get("event_type") or "unknown")
                         data = event.get("data") if isinstance(event.get("data"), dict) else {}
-                        self._record(event_type, data)
+                        if event_type == "state_changed":
+                            self._apply_state_changed(data)
+                        elif event_type == "knx_event":
+                            self._apply_knx_event(data)
+                        else:
+                            self._record(event_type, data)
             except asyncio.CancelledError:
                 break
             except Exception as exc:  # pragma: no cover - runtime bridge resilience
@@ -175,6 +274,7 @@ class KukugyaKnxBridge:
                     "last_seen_at": self._last_seen_at,
                     "last_error": self._last_error,
                     "buffered_events": len(self.event_buffer),
+                    "entity_count": len(self.entities),
                     "homeassistant_url": self.homeassistant_url,
                 }
             )
@@ -186,16 +286,46 @@ class KukugyaKnxBridge:
                     "status": "running",
                     "health": "/health",
                     "events": "/events",
+                    "entities": "/entities",
+                    "entity": "/entities/{entity_id}",
+                    "telegrams": "/telegrams",
                     "command": "/command",
                 }
             )
 
         async def events(request: web.Request) -> web.Response:
             limit = int(request.query.get("limit", "200") or 200)
-            event_type = request.query.get("type", "").strip()
-            items = self.snapshot(limit=limit)
-            if event_type:
-                items = [item for item in items if item["event_type"] == event_type]
+            event_type = request.query.get("type", "").strip() or None
+            items = self.snapshot_events(limit=limit, event_type=event_type)
+            return web.json_response({"items": items, "count": len(items)})
+
+        async def entities(request: web.Request) -> web.Response:
+            limit = int(request.query.get("limit", "500") or 500)
+            domain = request.query.get("domain", "").strip() or None
+            state = request.query.get("state", "").strip() or None
+            query = request.query.get("q", "").strip() or None
+            items = self.snapshot_entities(limit=limit, domain=domain, state=state, query=query)
+            return web.json_response({"items": items, "count": len(items)})
+
+        async def entity_detail(request: web.Request) -> web.Response:
+            entity_id = request.match_info["entity_id"]
+            entity = self.get_entity(entity_id)
+            if not entity:
+                raise web.HTTPNotFound(text=f"Unknown entity: {entity_id}")
+            return web.json_response(entity)
+
+        async def telegrams(request: web.Request) -> web.Response:
+            limit = int(request.query.get("limit", "200") or 200)
+            destination = request.query.get("destination", "").strip()
+            source = request.query.get("source", "").strip()
+            direction = request.query.get("direction", "").strip()
+            items = self.snapshot_events(limit=limit, event_type="knx_event")
+            if destination:
+                items = [item for item in items if str(item["data"].get("destination") or "") == destination]
+            if source:
+                items = [item for item in items if str(item["data"].get("source") or "") == source]
+            if direction:
+                items = [item for item in items if str(item["data"].get("direction") or "") == direction]
             return web.json_response({"items": items, "count": len(items)})
 
         async def command(request: web.Request) -> web.Response:
@@ -227,6 +357,23 @@ class KukugyaKnxBridge:
             self._record("bridge_command", {"kind": kind, "payload": payload})
             return web.json_response({"ok": True, "response": response})
 
+        async def snapshot(_: web.Request) -> web.Response:
+            return web.json_response(
+                {
+                    "health": {
+                        "connected": self._ha_connected,
+                        "last_seen_at": self._last_seen_at,
+                        "last_error": self._last_error,
+                    },
+                    "counts": {
+                        "events": len(self.event_buffer),
+                        "entities": len(self.entities),
+                    },
+                    "recent_events": self.snapshot_events(limit=20),
+                    "recent_entities": self.snapshot_entities(limit=20),
+                }
+            )
+
         async def cors_options(_: web.Request) -> web.Response:
             return web.Response(status=204)
 
@@ -235,9 +382,17 @@ class KukugyaKnxBridge:
                 web.get("/", root),
                 web.get("/health", health),
                 web.get("/events", events),
+                web.get("/entities", entities),
+                web.get("/entities/{entity_id}", entity_detail),
+                web.get("/telegrams", telegrams),
+                web.get("/snapshot", snapshot),
                 web.post("/command", command),
                 web.options("/health", cors_options),
                 web.options("/events", cors_options),
+                web.options("/entities", cors_options),
+                web.options("/entities/{entity_id}", cors_options),
+                web.options("/telegrams", cors_options),
+                web.options("/snapshot", cors_options),
                 web.options("/command", cors_options),
             ]
         )

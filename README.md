@@ -9,6 +9,7 @@ This add-on is meant to:
 - connect to the Home Assistant WebSocket API
 - subscribe to `state_changed` and `knx_event`
 - expose a small HTTP API that Kukugya can consume
+- keep a current entity cache and a KNX telegram buffer
 - later become the gateway for:
   - live device state visualization
   - KNX group monitor events
@@ -16,11 +17,19 @@ This add-on is meant to:
 
 ## Current status
 
-This is the first scaffold only:
+This is the first working bridge skeleton:
 
 - add-on manifest is in place
 - bridge process skeleton is in place
 - websocket/event/service-call flow is defined
+- HTTP endpoints expose:
+  - `/health`
+  - `/events`
+  - `/entities`
+  - `/entities/{entity_id}`
+  - `/telegrams`
+  - `/command`
+  - `/snapshot`
 - follow-up work will wire the Kukugya UI to this bridge
 
 ## Intended runtime
