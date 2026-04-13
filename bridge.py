@@ -266,6 +266,12 @@ class KukugyaKnxBridge:
         app = web.Application()
         app["bridge"] = self
 
+        def _corsify(response: web.StreamResponse) -> web.StreamResponse:
+            response.headers["Access-Control-Allow-Origin"] = "*"
+            response.headers["Access-Control-Allow-Headers"] = "content-type, authorization"
+            response.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
+            return response
+
         async def health(_: web.Request) -> web.Response:
             return web.json_response(
                 {
@@ -332,33 +338,39 @@ class KukugyaKnxBridge:
             try:
                 payload = await request.json()
             except Exception as exc:
-                raise web.HTTPBadRequest(text=f"Invalid JSON body: {exc}") from exc
-            kind = str(payload.get("kind") or "").strip()
-            if not kind:
-                raise web.HTTPBadRequest(text="Missing command kind")
-            if kind == "knx.send":
-                data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
-                response = await self._ha_call_service(domain="knx", service="send", service_data=data)
-            elif kind == "service":
-                service = payload.get("service")
-                domain = payload.get("domain")
-                if not isinstance(service, str) or not isinstance(domain, str):
-                    raise web.HTTPBadRequest(text="Missing domain/service for service command")
-                target = payload.get("target") if isinstance(payload.get("target"), dict) else None
-                service_data = payload.get("service_data") if isinstance(payload.get("service_data"), dict) else None
-                response = await self._ha_call_service(
-                    domain=domain,
-                    service=service,
-                    target=target,
-                    service_data=service_data,
-                )
-            else:
-                raise web.HTTPBadRequest(text=f"Unsupported command kind: {kind}")
-            self._record("bridge_command", {"kind": kind, "payload": payload})
-            return web.json_response({"ok": True, "response": response})
+                return _corsify(web.json_response({"ok": False, "error": f"Invalid JSON body: {exc}"}, status=400))
+            try:
+                kind = str(payload.get("kind") or "").strip()
+                if not kind:
+                    raise web.HTTPBadRequest(text="Missing command kind")
+                if kind == "knx.send":
+                    data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+                    response = await self._ha_call_service(domain="knx", service="send", service_data=data)
+                elif kind == "service":
+                    service = payload.get("service")
+                    domain = payload.get("domain")
+                    if not isinstance(service, str) or not isinstance(domain, str):
+                        raise web.HTTPBadRequest(text="Missing domain/service for service command")
+                    target = payload.get("target") if isinstance(payload.get("target"), dict) else None
+                    service_data = payload.get("service_data") if isinstance(payload.get("service_data"), dict) else None
+                    response = await self._ha_call_service(
+                        domain=domain,
+                        service=service,
+                        target=target,
+                        service_data=service_data,
+                    )
+                else:
+                    raise web.HTTPBadRequest(text=f"Unsupported command kind: {kind}")
+                self._record("bridge_command", {"kind": kind, "payload": payload})
+                return _corsify(web.json_response({"ok": True, "response": response}))
+            except web.HTTPException as exc:
+                return _corsify(web.json_response({"ok": False, "error": exc.text}, status=exc.status))
+            except Exception as exc:
+                LOG.exception("Command failed")
+                return _corsify(web.json_response({"ok": False, "error": str(exc)}, status=500))
 
         async def snapshot(_: web.Request) -> web.Response:
-            return web.json_response(
+            return _corsify(web.json_response(
                 {
                     "health": {
                         "connected": self._ha_connected,
@@ -372,10 +384,10 @@ class KukugyaKnxBridge:
                     "recent_events": self.snapshot_events(limit=20),
                     "recent_entities": self.snapshot_entities(limit=20),
                 }
-            )
+            ))
 
         async def cors_options(_: web.Request) -> web.Response:
-            return web.Response(status=204)
+            return _corsify(web.Response(status=204))
 
         app.add_routes(
             [
@@ -403,12 +415,14 @@ class KukugyaKnxBridge:
                 response = await cors_options(request)
             else:
                 response = await handler(request)
-            response.headers["Access-Control-Allow-Origin"] = "*"
-            response.headers["Access-Control-Allow-Headers"] = "content-type, authorization"
-            response.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
-            return response
+            return _corsify(response)
 
         app.middlewares.append(cors_middleware)
+
+        async def add_cors_headers(request: web.Request, response: web.StreamResponse) -> None:
+            _corsify(response)
+
+        app.on_response_prepare.append(add_cors_headers)
         self._app = app
         return app
 
