@@ -1,6 +1,6 @@
 # Kukugya KNX Bridge
 
-Home Assistant add-on scaffold for the future Kukugya <-> live KNX bridge.
+Home Assistant add-on for the Kukugya <-> live KNX bridge.
 
 ## Purpose
 
@@ -17,11 +17,11 @@ This add-on is meant to:
 
 ## Current status
 
-This is the first working bridge skeleton:
+Current bridge capabilities:
 
-- add-on manifest is in place
-- bridge process skeleton is in place
-- websocket/event/service-call flow is defined
+- Home Assistant websocket auth and reconnect
+- bridge HTTP API with bearer-token authentication
+- generated or configured persistent API key
 - HTTP endpoints expose:
   - `/health`
   - `/events`
@@ -30,7 +30,8 @@ This is the first working bridge skeleton:
   - `/telegrams`
   - `/command`
   - `/snapshot`
-- follow-up work will wire the Kukugya UI to this bridge
+
+See `/addons/homeassistant-knx-bridge/CHANGELOG.md` for version history.
 
 ## Intended runtime
 
