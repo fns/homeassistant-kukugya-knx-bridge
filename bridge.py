@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hmac
 import json
 import logging
 import os
+import secrets
 from collections import deque
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -16,11 +18,13 @@ from aiohttp import ClientSession, ClientTimeout, WSMsgType, web
 
 LOG = logging.getLogger("kukugya.knx_bridge")
 OPTIONS_PATH = Path("/data/options.json")
+API_KEY_PATH = Path("/data/bridge_api_key")
 DEFAULT_OPTIONS = {
     "homeassistant_url": "ws://supervisor/core/websocket",
     "bind_host": "0.0.0.0",
     "bind_port": 8099,
     "event_buffer_size": 1000,
+    "api_key": "",
 }
 
 
@@ -51,6 +55,7 @@ class KukugyaKnxBridge:
         self.event_buffer: Deque[BridgeEvent] = deque(
             maxlen=int(options.get("event_buffer_size") or DEFAULT_OPTIONS["event_buffer_size"])
         )
+        self.api_key = self._load_api_key(options)
         self.entities: dict[str, EntitySnapshot] = {}
         self._session: ClientSession | None = None
         self._ha_task: asyncio.Task[None] | None = None
@@ -69,9 +74,46 @@ class KukugyaKnxBridge:
             LOG.warning("Could not load options.json: %s", exc)
             return {}
 
+    def _load_api_key(self, options: dict[str, Any]) -> str:
+        configured = str(options.get("api_key") or DEFAULT_OPTIONS["api_key"]).strip()
+        if configured:
+            LOG.info("Bridge API auth enabled with configured api_key option")
+            return configured
+        try:
+            existing = API_KEY_PATH.read_text(encoding="utf-8").strip()
+            if existing:
+                LOG.warning("Bridge API key: %s", existing)
+                LOG.info("Bridge API auth enabled with generated persistent key from %s", API_KEY_PATH)
+                return existing
+        except FileNotFoundError:
+            pass
+        except Exception as exc:  # pragma: no cover - defensive
+            LOG.warning("Could not read bridge API key file: %s", exc)
+        generated = secrets.token_urlsafe(32)
+        try:
+            API_KEY_PATH.write_text(generated, encoding="utf-8")
+        except Exception as exc:  # pragma: no cover - defensive
+            LOG.warning("Could not persist generated bridge API key: %s", exc)
+        LOG.warning("Generated bridge API key: %s", generated)
+        LOG.warning("Store this key in the Kukugya project bridge settings or set options.api_key explicitly.")
+        return generated
+
     @property
     def token(self) -> str:
         return os.environ.get("SUPERVISOR_TOKEN", "").strip()
+
+    def _is_authorized(self, request: web.Request) -> bool:
+        expected = self.api_key.strip()
+        if not expected:
+            return False
+        auth_header = request.headers.get("Authorization", "").strip()
+        if auth_header.lower().startswith("bearer "):
+            presented = auth_header[7:].strip()
+        else:
+            presented = request.query.get("api_key", "").strip()
+        if not presented:
+            return False
+        return hmac.compare_digest(presented, expected)
 
     def _now(self) -> str:
         return datetime.now(timezone.utc).isoformat()
@@ -417,7 +459,25 @@ class KukugyaKnxBridge:
                 response = await handler(request)
             return _corsify(response)
 
+        @web.middleware
+        async def auth_middleware(request: web.Request, handler: Any) -> web.StreamResponse:
+            if request.method == "OPTIONS":
+                return await handler(request)
+            if self._is_authorized(request):
+                return await handler(request)
+            return _corsify(
+                web.json_response(
+                    {
+                        "ok": False,
+                        "error": "Unauthorized",
+                        "hint": "Provide the bridge API key as Authorization: Bearer <key>.",
+                    },
+                    status=401,
+                )
+            )
+
         app.middlewares.append(cors_middleware)
+        app.middlewares.append(auth_middleware)
 
         async def add_cors_headers(request: web.Request, response: web.StreamResponse) -> None:
             _corsify(response)
