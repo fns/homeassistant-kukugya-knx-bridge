@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.6
+
+- add `knx.read` command: sends a real GroupValueRead on the KNX bus and logs the outgoing telegram to the event buffer
+- `knx.send` now also logs its outgoing GroupValueWrite to the event buffer so it appears in the monitor list
+
 ## 0.1.5
 
 - add Home Assistant add-on icon and logo from Kukugya branding
