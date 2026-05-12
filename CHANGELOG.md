@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.9
+
+- bump version (next release placeholder)
+
 ## 0.1.8
 
 - forward `dpt_main`, `dpt_sub`, and `unit` fields from HA `knx_event` so the Kukugya monitor can decode and display values for group addresses not in the Kukugya project
