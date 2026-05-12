@@ -388,6 +388,27 @@ class KukugyaKnxBridge:
                 if kind == "knx.send":
                     data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
                     response = await self._ha_call_service(domain="knx", service="send", service_data=data)
+                    self._record("knx_event", {
+                        "source": None,
+                        "destination": data.get("address"),
+                        "direction": "Outgoing",
+                        "telegramtype": "GroupValueWrite",
+                        "value": data.get("payload"),
+                        "data": None,
+                    })
+                elif kind == "knx.read":
+                    address = str(payload.get("address") or "").strip()
+                    if not address:
+                        raise web.HTTPBadRequest(text="Missing address for knx.read")
+                    response = await self._ha_call_service(domain="knx", service="read", service_data={"address": address})
+                    self._record("knx_event", {
+                        "source": None,
+                        "destination": address,
+                        "direction": "Outgoing",
+                        "telegramtype": "GroupValueRead",
+                        "value": None,
+                        "data": None,
+                    })
                 elif kind == "service":
                     service = payload.get("service")
                     domain = payload.get("domain")
