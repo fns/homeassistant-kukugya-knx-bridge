@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.8
+
+- forward `dpt_main`, `dpt_sub`, and `unit` fields from HA `knx_event` so the Kukugya monitor can decode and display values for group addresses not in the Kukugya project
+
 ## 0.1.7
 
 - fix `knx.read`: send address as list so HA actually dispatches the GroupValueRead on the bus

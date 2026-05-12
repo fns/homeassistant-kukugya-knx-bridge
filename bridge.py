@@ -157,13 +157,16 @@ class KukugyaKnxBridge:
         self._record("state_changed", normalized)
 
     def _apply_knx_event(self, data: dict[str, Any]) -> None:
-        normalized = {
+        normalized: dict[str, Any] = {
             "source": data.get("source"),
             "destination": data.get("destination"),
             "direction": data.get("direction"),
             "telegramtype": data.get("telegramtype"),
             "value": data.get("value"),
             "data": data.get("data"),
+            "dpt_main": data.get("dpt_main"),
+            "dpt_sub": data.get("dpt_sub"),
+            "unit": data.get("unit"),
         }
         self._record("knx_event", normalized)
 
