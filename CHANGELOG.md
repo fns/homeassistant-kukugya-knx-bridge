@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.7
+
+- fix `knx.read`: send address as list so HA actually dispatches the GroupValueRead on the bus
+
 ## 0.1.6
 
 - add `knx.read` command: sends a real GroupValueRead on the KNX bus and logs the outgoing telegram to the event buffer

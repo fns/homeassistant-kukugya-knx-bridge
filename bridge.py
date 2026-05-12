@@ -400,7 +400,7 @@ class KukugyaKnxBridge:
                     address = str(payload.get("address") or "").strip()
                     if not address:
                         raise web.HTTPBadRequest(text="Missing address for knx.read")
-                    response = await self._ha_call_service(domain="knx", service="read", service_data={"address": address})
+                    response = await self._ha_call_service(domain="knx", service="read", service_data={"address": [address]})
                     self._record("knx_event", {
                         "source": None,
                         "destination": address,

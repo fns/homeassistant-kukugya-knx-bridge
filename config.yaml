@@ -1,7 +1,7 @@
 name: Kukugya KNX Bridge
 slug: kukugya_knx_bridge
 description: Bridge Kukugya to a live KNX bus via Home Assistant WebSocket API.
-version: "0.1.6"
+version: "0.1.7"
 arch:
   - amd64
   - aarch64
