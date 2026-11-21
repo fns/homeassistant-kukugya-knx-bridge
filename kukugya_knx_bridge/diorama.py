@@ -21,8 +21,19 @@ mirroring how _ha_call_service already works there.
 One real schema constraint worth remembering: ha-diorama's own RoomConfig.points
 convention is "x grows to the right, y grows UPWARD on the plan" (a math/Cartesian
 y-up convention) - Kukugya's own canvas is screen/Konva y-DOWN, so
-dioramaExport.ts already negates y at export time. This module must NOT negate it
-again; it just passes the already-converted meters straight through.
+dioramaExport.ts already negates y at export time (positions and rotations alike).
+This module must NOT negate/recompute anything; it just passes the already-converted
+meters/degrees straight through.
+
+dioramaExport.ts also auto-picks a `decorations` entry per device (lamp/plug/
+thermostat/cover, from Device.lightType/wallPlacement and the predicted HA domain)
+and per real door/window leaf on a Kukugya WallOpening - one sensible catalog
+default per type, not a blind guess, per explicit user direction. Kukugya's own
+per-room/wall ceiling height has nowhere to go here: ha-diorama's ceiling height is
+a fixed theme constant with no per-room override in its schema. Kukugya's generic
+"Objects" layer (furniture/equipment boxes) is deliberately NOT exported either -
+it only carries a free-text name and raw box dimensions, no finite type enum to
+map onto ha-diorama's furniture catalog with any confidence.
 """
 from __future__ import annotations
 
@@ -82,8 +93,27 @@ def build_card_config(building: dict[str, Any]) -> dict[str, Any]:
             "entity_id": device["entityId"],
             "room": device["roomId"],
             "position": [device["position"][0], device["position"][1]],
+            **({"decorations": device["decorations"]} if device.get("decorations") else {}),
         }
         for device in building.get("devices", [])
+    ]
+    # One DecorationConfig per auto-picked 3D prop (device lamps/plugs/thermostats/
+    # covers and door/window leaves from Kukugya's own WallOpening data) - see
+    # dioramaExport.ts's resolveLightDecoration/DOMAIN_DECORATION_KIND/
+    # classifyOpeningKind for how each one's kind/rotation/params was picked.
+    # rotation/variant/params are only present on the TS side when there was real
+    # data to set them from, so they're dropped here rather than forwarded as null.
+    decorations = [
+        {
+            "id": decoration["id"],
+            "kind": decoration["kind"],
+            "room": decoration["room"],
+            "position": [decoration["position"][0], decoration["position"][1]],
+            **({"rotation": decoration["rotation"]} if decoration.get("rotation") is not None else {}),
+            **({"variant": decoration["variant"]} if decoration.get("variant") else {}),
+            **({"params": decoration["params"]} if decoration.get("params") else {}),
+        }
+        for decoration in building.get("decorations", [])
     ]
     return {
         "type": "custom:diorama-card",
@@ -95,6 +125,7 @@ def build_card_config(building: dict[str, Any]) -> dict[str, Any]:
         "floors": floors,
         "rooms": rooms,
         "devices": devices,
+        "decorations": decorations,
     }
 
 
