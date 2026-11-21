@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.1.18
+
+- floorplan dashboard: device markers now use the EXACT same shape/sizing as the real Kukugya canvas (`DeviceLayer.tsx`) - a rounded rect (not a circle), sized from the same `iconWidthM = clamp(1/iconDensityPerM, 1/12, 0.72)` formula × the floor's own `pxPerM`, with matching corner radius/stroke width/font size all scaled from the same `ratio`, and the full device-type icon glyph (not truncated to 2 characters)
+- `floorplanDashboardConfig.ts` now exports each floor's `pxPerM` and `iconDensityPerM` so the add-on can reproduce this sizing without guessing
+
+## 0.1.17
+
+- floorplan dashboard visual overhaul: lighter room fill, modern font stack, stronger on/off contrast (brighter glow when on, desaturated+dimmed when off)
+- device icon text now has `text-anchor="middle"` set as a direct SVG attribute (not only CSS) so horizontal+vertical centering can't be lost to any cascade/scoping surprise
+- numeric sensor values (temperature/humidity/CO2/...) now render in their own small labelled pill below the device marker (`floorplan.text_set` targeting a dedicated badge element via `service_data.element`), instead of overwriting the device icon's own text
+- a device with no matching Home Assistant entity now gets an obvious red "!" badge at the marker's corner, in addition to the existing dashed ring
+- each floor's dashboard tab/card title always shows "Building - Floor" (previously only when two floor names collided)
+- removed the forced `log_level`/`console_log_level: debug` diagnostic (no native runtime toggle exists in ha-floorplan anyway; the on-icon "not found" badge now covers what the console log was for)
+
+## 0.1.16
+
+- floorplan dashboard: fix device icon text not being vertically centered in its circle (cross-browser `dy="0.35em"` offset instead of CSS `dominant-baseline`, which renders inconsistently, notably in Safari)
+- floorplan dashboard: a device marker whose entity_id doesn't actually exist in Home Assistant right now gets a dashed red/orange ring (`/floorplan/svg/...` fetches live entity states via `get_states` on every request, so this stays current without a full re-push)
+- floorplan dashboard: hover tooltip now shows the device's full group-address list (main/middle/addr/type) alongside its Home Assistant entity_id(s) and whether each was found — `hover_action: hover-info` removed from the card defaults since it would otherwise overwrite this same tooltip with just the entity's state/attributes
+
 ## 0.1.15
 
 - floorplan dashboard: bump the diagnostic `log_level`/`console_log_level` from `warning` to `debug` so the browser console also shows a "STATE `<entity_id>`: `<state>` (initial load)" line for every entity that bound successfully, not just "Cannot find ..." warnings for the ones that didn't

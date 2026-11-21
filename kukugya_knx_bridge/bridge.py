@@ -315,6 +315,20 @@ class KukugyaKnxBridge:
         await self._ensure_lovelace_dashboard(url_path, title)
         await self._ha_ws_request({"type": "lovelace/config/save", "url_path": url_path, "config": {"views": views}})
 
+    async def fetch_known_entity_ids(self) -> set[str] | None:
+        """Live entity_ids that actually exist in Home Assistant right now, used by
+        floorplan.py to flag a device marker whose predicted/overridden entity_id
+        doesn't match anything real. Returns None (not an empty set) on failure, so a
+        transient HA hiccup doesn't make every single device look unmatched.
+        """
+        try:
+            states = await self._ha_ws_request({"type": "get_states"})
+        except Exception:
+            return None
+        if not isinstance(states, list):
+            return None
+        return {str(item["entity_id"]) for item in states if isinstance(item, dict) and item.get("entity_id")}
+
     async def _ha_loop(self) -> None:
         backoff = 1
         while not self._shutdown.is_set():
@@ -527,7 +541,8 @@ class KukugyaKnxBridge:
             floor = floorplan.find_floor(config, floor_id)
             if not floor:
                 raise web.HTTPNotFound(text=f"Unknown floor {floor_id} for project {project_id}")
-            svg = floorplan.build_floor_svg(floor)
+            known_entity_ids = await self.fetch_known_entity_ids()
+            svg = floorplan.build_floor_svg(floor, known_entity_ids)
             return web.Response(text=svg, content_type="image/svg+xml")
 
         async def snapshot(_: web.Request) -> web.Response:

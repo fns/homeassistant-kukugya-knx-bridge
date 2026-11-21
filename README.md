@@ -4,7 +4,7 @@ Home Assistant add-on repository for the Kukugya KNX bridge.
 
 ## Current add-on version
 
-`0.1.15`
+`0.1.18`
 
 ## What is inside
 
