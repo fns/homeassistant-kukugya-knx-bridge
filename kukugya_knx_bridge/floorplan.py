@@ -53,7 +53,8 @@ DASHBOARD_TITLE = "Kukugya Floorplan"
 RESOURCE_PATH = "/static/ha-floorplan/floorplan.js"
 
 FLOORPLAN_STYLE = """
-    .kg-room { fill: #26312b; stroke: #44503f; stroke-width: 3; }
+    .kg-room { fill: #26312b; stroke: none; }
+    .kg-wall { stroke: #44503f; stroke-width: 3; stroke-linecap: square; fill: none; }
     .kg-opening { fill: #0f1a14; stroke: none; }
     .kg-device circle { stroke: #10140f; stroke-width: 2; transition: filter .2s ease, opacity .2s ease; }
     .kg-device text { font-family: sans-serif; font-size: 13px; font-weight: 700; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
@@ -144,6 +145,17 @@ def build_floor_svg(floor: dict[str, Any]) -> str:
             continue
         room_id = html.escape(_safe_id(room["id"]), quote=True)
         parts.append(f'<polygon id="room-{room_id}" class="kg-room" points="{points}" />')
+    for room in rooms:
+        # Wall centerlines are drawn separately from the room fill above (not as the
+        # polygon's own stroke) - floorplanDashboardConfig.ts already cut out the span
+        # of every floor-to-ceiling opening, so a missing piece here means a real
+        # absence of wall, not a rendering gap to "fix".
+        for segment in room.get("wallSegments", []):
+            start, end = segment["start"], segment["end"]
+            parts.append(
+                f'<line class="kg-wall" x1="{start["x"]:.1f}" y1="{start["y"]:.1f}" '
+                f'x2="{end["x"]:.1f}" y2="{end["y"]:.1f}" />'
+            )
     for opening in openings:
         points = _rect_points(opening.get("rectPoints", []))
         if not points:
@@ -209,6 +221,13 @@ def build_floor_card_config(floor: dict[str, Any], svg_url: str, title: str | No
         "full_height": True,
         "config": {
             "image": svg_url,
+            # Temporary diagnostic aid: ha-floorplan's own internal warnings (e.g.
+            # "Cannot find element 'device-x' in SVG file") only reach the browser
+            # console when console_log_level is set - without it they're swallowed
+            # into the card's own hidden in-SVG log overlay. Remove once entity/click
+            # binding is confirmed working, to stop spamming the console.
+            "log_level": "warning",
+            "console_log_level": "warning",
             "defaults": {"hover_action": "hover-info", "tap_action": "more-info"},
             "rules": rules,
         },

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.14
+
+- floorplan dashboard: where an opening spans floor-to-ceiling (a real absence of wall, not a door/window), render neither the opening symbol nor the wall line for that span — wall centerlines are now computed per-room on the Kukugya export side (`floorplanDashboardConfig.ts`'s `buildWallSegmentsWithGaps`, reusing `buildRoomWallSegments`/`resolveWallHeightM`/`computeOpeningGeometry`) and drawn as separate `<line class="kg-wall">` pieces instead of the room polygon's own stroke
+
+## 0.1.13
+
+- floorplan dashboard: temporarily set `log_level`/`console_log_level: warning` in the generated `ha-floorplan` card config so its internal warnings (e.g. a mismatched SVG element id) actually surface in the browser console instead of being swallowed by the card's own hidden log overlay — diagnostic aid, remove once entity/click binding is confirmed solid
+
 ## 0.1.12
 
 - floorplan dashboard: fix the floorplan rendering tiny in a mostly-empty view — the generated SVG now sets explicit `width="100%" height="100%"` (previously viewBox-only, which browsers render at a small default box when inlined), the card sets `full_height: true`, and each floor's view uses `type: "panel"` instead of masonry so the single floorplan card fills the whole view edge-to-edge
