@@ -1,43 +1,21 @@
-# Kukugya KNX Bridge
+# Kukugya Home Assistant KNX Bridge
 
-**Version: 0.1.9**
+Home Assistant add-on repository for the Kukugya KNX bridge.
 
-Home Assistant add-on for the Kukugya <-> live KNX bridge.
+## Current add-on version
+
+`0.1.10`
+
+## What is inside
+
+- `kukugya_knx_bridge/` - the add-on source
+- `repository.yaml` - Home Assistant add-on repository metadata
 
 ## Purpose
 
-This add-on is meant to:
+This add-on bridges Kukugya and a live KNX project through Home Assistant:
 
-- connect to the Home Assistant WebSocket API
-- subscribe to `state_changed` and `knx_event`
-- expose a small HTTP API that Kukugya can consume
-- keep a current entity cache and a KNX telegram buffer
-- later become the gateway for:
-  - live device state visualization
-  - KNX group monitor events
-  - device control via Home Assistant services
-
-## Current status
-
-Current bridge capabilities:
-
-- Home Assistant websocket auth and reconnect
-- bridge HTTP API with bearer-token authentication
-- generated or configured persistent API key
-- HTTP endpoints expose:
-  - `/health`
-  - `/events`
-  - `/entities`
-  - `/entities/{entity_id}`
-  - `/telegrams`
-  - `/command`
-  - `/snapshot`
-
-See `/addons/homeassistant-knx-bridge/CHANGELOG.md` for version history.
-
-## Intended runtime
-
-- runs as a Home Assistant add-on on the HA Green
-- talks to the local Home Assistant core websocket endpoint
-- receives the supervisor token from the add-on runtime
-- serves a small LAN-accessible API on port `8099`
+- subscribes to Home Assistant `state_changed` events
+- subscribes to Home Assistant `knx_event` events
+- exposes a small bridge API for Kukugya
+- relays KNX control/service calls through Home Assistant
