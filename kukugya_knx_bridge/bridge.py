@@ -16,7 +16,7 @@ from typing import Any, Deque
 
 from aiohttp import ClientSession, ClientTimeout, WSMsgType, web
 
-import floorplan
+import diorama
 
 LOG = logging.getLogger("kukugya.knx_bridge")
 STATIC_DIR = Path(__file__).parent / "static"
@@ -273,7 +273,7 @@ class KukugyaKnxBridge:
     async def _ha_ws_request(self, message: dict[str, Any]) -> Any:
         """One-shot authenticated HA core websocket request/response, same connection
         pattern as _ha_call_service above - used for the Lovelace storage commands
-        the floorplan dashboard push needs (lovelace/resources/*, lovelace/dashboards/*,
+        the diorama dashboard push needs (lovelace/resources/*, lovelace/dashboards/*,
         lovelace/config/save), none of which are part of the live KNX event loop.
         """
         if not self._session:
@@ -293,7 +293,7 @@ class KukugyaKnxBridge:
                 return
         await self._ha_ws_request({"type": "lovelace/resources/create", "res_type": "module", "url": url})
 
-    async def _ensure_lovelace_dashboard(self, url_path: str, title: str) -> None:
+    async def _ensure_lovelace_dashboard(self, url_path: str, title: str, icon: str = "mdi:floor-plan") -> None:
         items = await self._ha_ws_request({"type": "lovelace/dashboards/list"})
         for item in items if isinstance(items, list) else []:
             if item.get("url_path") == url_path:
@@ -303,31 +303,23 @@ class KukugyaKnxBridge:
                 "type": "lovelace/dashboards/create",
                 "url_path": url_path,
                 "title": title,
-                "icon": "mdi:floor-plan",
+                "icon": icon,
                 "show_in_sidebar": True,
             }
         )
 
     async def push_lovelace_dashboard(
-        self, *, url_path: str, title: str, views: list[dict[str, Any]], resource_url: str
+        self,
+        *,
+        url_path: str,
+        title: str,
+        views: list[dict[str, Any]],
+        resource_url: str,
+        icon: str = "mdi:floor-plan",
     ) -> None:
         await self._ensure_lovelace_resource(resource_url)
-        await self._ensure_lovelace_dashboard(url_path, title)
+        await self._ensure_lovelace_dashboard(url_path, title, icon)
         await self._ha_ws_request({"type": "lovelace/config/save", "url_path": url_path, "config": {"views": views}})
-
-    async def fetch_known_entity_ids(self) -> set[str] | None:
-        """Live entity_ids that actually exist in Home Assistant right now, used by
-        floorplan.py to flag a device marker whose predicted/overridden entity_id
-        doesn't match anything real. Returns None (not an empty set) on failure, so a
-        transient HA hiccup doesn't make every single device look unmatched.
-        """
-        try:
-            states = await self._ha_ws_request({"type": "get_states"})
-        except Exception:
-            return None
-        if not isinstance(states, list):
-            return None
-        return {str(item["entity_id"]) for item in states if isinstance(item, dict) and item.get("entity_id")}
 
     async def _ha_loop(self) -> None:
         backoff = 1
@@ -403,7 +395,7 @@ class KukugyaKnxBridge:
                     "entity": "/entities/{entity_id}",
                     "telegrams": "/telegrams",
                     "command": "/command",
-                    "floorplan_import": "/floorplan/import",
+                    "diorama_import": "/diorama/import",
                 }
             )
 
@@ -498,7 +490,7 @@ class KukugyaKnxBridge:
                 LOG.exception("Command failed")
                 return _corsify(web.json_response({"ok": False, "error": str(exc)}, status=500))
 
-        async def floorplan_import(request: web.Request) -> web.Response:
+        async def diorama_import(request: web.Request) -> web.Response:
             try:
                 config = await request.json()
             except Exception as exc:
@@ -507,43 +499,28 @@ class KukugyaKnxBridge:
             if not project_id:
                 return _corsify(web.json_response({"ok": False, "error": "Missing projectId"}, status=400))
             try:
-                floorplan.store_import(project_id, config)
+                diorama.store_import(project_id, config)
                 base_url = f"{request.scheme}://{request.headers.get('Host', request.host)}"
-                resource_url = f"{base_url}{floorplan.RESOURCE_PATH}"
-                views = floorplan.build_dashboard_views(
-                    config,
-                    lambda floor_id: f"{base_url}/floorplan/svg/{project_id}/{floor_id}.svg",
-                )
+                resource_url = f"{base_url}{diorama.RESOURCE_PATH}"
+                views = diorama.build_dashboard_views(config)
                 if not views:
                     return _corsify(
-                        web.json_response({"ok": False, "error": "No floors with Home Assistant entities to push"}, status=400)
+                        web.json_response({"ok": False, "error": "No buildings with Home Assistant entities to push"}, status=400)
                     )
                 await self.push_lovelace_dashboard(
-                    url_path=floorplan.DASHBOARD_URL_PATH,
-                    title=floorplan.DASHBOARD_TITLE,
+                    url_path=diorama.DASHBOARD_URL_PATH,
+                    title=diorama.DASHBOARD_TITLE,
                     views=views,
                     resource_url=resource_url,
+                    icon="mdi:cube-outline",
                 )
-                self._record("floorplan_dashboard_pushed", {"projectId": project_id, "floors": len(views)})
+                self._record("diorama_dashboard_pushed", {"projectId": project_id, "buildings": len(views)})
                 return _corsify(
-                    web.json_response({"ok": True, "floors": len(views), "dashboard_url_path": floorplan.DASHBOARD_URL_PATH})
+                    web.json_response({"ok": True, "buildings": len(views), "dashboard_url_path": diorama.DASHBOARD_URL_PATH})
                 )
             except Exception as exc:
-                LOG.exception("Floorplan dashboard push failed")
+                LOG.exception("Diorama dashboard push failed")
                 return _corsify(web.json_response({"ok": False, "error": str(exc)}, status=500))
-
-        async def floorplan_svg(request: web.Request) -> web.Response:
-            project_id = request.match_info["project_id"]
-            floor_id = request.match_info["floor_id"]
-            config = floorplan.load_import(project_id)
-            if not config:
-                raise web.HTTPNotFound(text=f"No floorplan import stored for project {project_id}")
-            floor = floorplan.find_floor(config, floor_id)
-            if not floor:
-                raise web.HTTPNotFound(text=f"Unknown floor {floor_id} for project {project_id}")
-            known_entity_ids = await self.fetch_known_entity_ids()
-            svg = floorplan.build_floor_svg(floor, known_entity_ids)
-            return web.Response(text=svg, content_type="image/svg+xml")
 
         async def snapshot(_: web.Request) -> web.Response:
             return _corsify(web.json_response(
@@ -575,8 +552,7 @@ class KukugyaKnxBridge:
                 web.get("/telegrams", telegrams),
                 web.get("/snapshot", snapshot),
                 web.post("/command", command),
-                web.post("/floorplan/import", floorplan_import),
-                web.get("/floorplan/svg/{project_id}/{floor_id}.svg", floorplan_svg),
+                web.post("/diorama/import", diorama_import),
                 web.options("/health", cors_options),
                 web.options("/events", cors_options),
                 web.options("/entities", cors_options),
@@ -584,7 +560,7 @@ class KukugyaKnxBridge:
                 web.options("/telegrams", cors_options),
                 web.options("/snapshot", cors_options),
                 web.options("/command", cors_options),
-                web.options("/floorplan/import", cors_options),
+                web.options("/diorama/import", cors_options),
             ]
         )
         if STATIC_DIR.is_dir():
@@ -602,13 +578,11 @@ class KukugyaKnxBridge:
         async def auth_middleware(request: web.Request, handler: Any) -> web.StreamResponse:
             if request.method == "OPTIONS":
                 return await handler(request)
-            # The vendored ha-floorplan JS and the generated per-floor floorplan SVGs are
-            # fetched anonymously by the end user's browser as plain Lovelace dashboard
-            # assets (a <script> resource / floorplan-card image load) - they never carry
-            # our bearer token. Neither exposes live KNX/HA state: the JS is a static
-            # third-party library, the SVGs are just the room/device layout already
-            # visible inside Kukugya itself.
-            if request.path.startswith("/static/") or request.path.startswith("/floorplan/svg/"):
+            # The vendored ha-diorama card.js is fetched anonymously by the end user's
+            # browser as a plain Lovelace resource (a <script> load) - it never carries
+            # our bearer token, and it's just a static third-party library file, not
+            # live KNX/HA state.
+            if request.path.startswith("/static/"):
                 return await handler(request)
             if self._is_authorized(request):
                 return await handler(request)

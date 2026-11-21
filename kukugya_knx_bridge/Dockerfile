@@ -15,7 +15,7 @@ RUN apk add --no-cache python3 py3-aiohttp
 
 WORKDIR /app
 COPY bridge.py /app/bridge.py
-COPY floorplan.py /app/floorplan.py
+COPY diorama.py /app/diorama.py
 COPY static /app/static
 COPY run.sh /run.sh
 RUN chmod a+x /run.sh

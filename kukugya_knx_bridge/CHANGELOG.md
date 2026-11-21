@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.0
+
+- **Replaces the floorplan dashboard with a diorama dashboard**, per explicit user decision: the hand-rolled 2D SVG + `ha-floorplan` card is gone, replaced by the actively-maintained, polished 3D isometric [ha-diorama](https://github.com/CarlesRojas/ha-diorama) card (vendored `card.js` v1.11.1, `static/ha-diorama/`)
+- new `POST /diorama/import` generates/updates a real "Kukugya Diorama" Lovelace dashboard (one 3D view per building, `type: custom:diorama-card`) directly from Kukugya's room polygons (converted to meters, y-flipped) and device positions/entity bindings - no custom SVG rendering of our own needed at all, ha-diorama's own config schema does the rest
+- removed `/floorplan/import` and `/floorplan/svg/...` (and `floorplan.py` entirely) along with the vendored `ha-floorplan` card
+- devices still need a one-time manual "decoration" pick (which 3D furniture/lamp model represents them) in ha-diorama's own editor - Kukugya has no catalog data to automate that part, only the room/position/entity-binding geometry
+
 ## 0.1.18
 
 - floorplan dashboard: device markers now use the EXACT same shape/sizing as the real Kukugya canvas (`DeviceLayer.tsx`) - a rounded rect (not a circle), sized from the same `iconWidthM = clamp(1/iconDensityPerM, 1/12, 0.72)` formula × the floor's own `pxPerM`, with matching corner radius/stroke width/font size all scaled from the same `ratio`, and the full device-type icon glyph (not truncated to 2 characters)

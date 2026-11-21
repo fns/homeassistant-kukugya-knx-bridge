@@ -1,6 +1,6 @@
 # Kukugya KNX Bridge
 
-**Version: 0.1.18**
+**Version: 0.2.0**
 
 Home Assistant add-on for the Kukugya <-> live KNX bridge.
 
@@ -32,11 +32,11 @@ Current bridge capabilities:
   - `/telegrams`
   - `/command`
   - `/snapshot`
-  - `/floorplan/import` (POST) - generates/updates a real "Kukugya Floorplan" Lovelace
-    dashboard (one view per floor) from a Kukugya floorplan export, using the vendored
-    `ha-floorplan` custom card (see `static/ha-floorplan/README.md`)
-  - `/floorplan/svg/{project_id}/{floor_id}.svg` and `/static/ha-floorplan/floorplan.js`
-    - public (no bearer token), fetched directly by the browser's HA frontend
+  - `/diorama/import` (POST) - generates/updates a real "Kukugya Diorama" Lovelace
+    dashboard (one 3D view per building) from a Kukugya diorama export, using the
+    vendored `ha-diorama` custom card (see `static/ha-diorama/README.md`)
+  - `/static/ha-diorama/card.js` - public (no bearer token), fetched directly by the
+    browser's HA frontend
 
 See `/addons/homeassistant-knx-bridge/CHANGELOG.md` for version history.
 
