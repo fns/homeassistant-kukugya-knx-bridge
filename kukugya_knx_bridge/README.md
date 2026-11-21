@@ -1,6 +1,6 @@
 # Kukugya KNX Bridge
 
-**Version: 0.1.10**
+**Version: 0.1.12**
 
 Home Assistant add-on for the Kukugya <-> live KNX bridge.
 

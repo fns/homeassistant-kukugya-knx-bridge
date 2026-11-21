@@ -126,7 +126,16 @@ def build_floor_svg(floor: dict[str, Any]) -> str:
     height = max(1.0, max_y - min_y)
 
     parts: list[str] = [
-        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{min_x:.1f} {min_y:.1f} {width:.1f} {height:.1f}">',
+        # width/height="100%" is required - ha-floorplan's own CSS (floorplan-element.ts) only
+        # flex-stretches the SVG's immediate container, not a plain inline <svg> that has no
+        # explicit size of its own; without these, the browser falls back to the standard
+        # replaced-element default box (a small fixed size) regardless of the viewBox, which is
+        # why the floorplan rendered as a tiny box instead of filling the card.
+        (
+            f'<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" '
+            f'preserveAspectRatio="xMidYMid meet" '
+            f'viewBox="{min_x:.1f} {min_y:.1f} {width:.1f} {height:.1f}">'
+        ),
         f"<style>{FLOORPLAN_STYLE}</style>",
     ]
     for room in rooms:
@@ -176,7 +185,7 @@ def _state_action_for_domain(domain: str) -> dict[str, Any] | None:
     return None
 
 
-def build_floor_card_config(floor: dict[str, Any], svg_url: str) -> dict[str, Any]:
+def build_floor_card_config(floor: dict[str, Any], svg_url: str, title: str | None = None) -> dict[str, Any]:
     rules: list[dict[str, Any]] = []
     for device in floor.get("devices", []):
         element_id = f"device-{_safe_id(device['id'])}"
@@ -192,7 +201,12 @@ def build_floor_card_config(floor: dict[str, Any], svg_url: str) -> dict[str, An
             rules.append(rule)
     return {
         "type": "custom:floorplan-card",
-        "title": floor.get("name") or "Floor",
+        "title": title or floor.get("name") or "Floor",
+        # full_height is a TOP-LEVEL card field (FloorplanCard.isFullHeight reads
+        # this.config.full_height, where this.config is the whole card dict, not the
+        # nested floorplan `config:` block) - without it the card only takes its
+        # content's natural height, leaving most of the view visually empty.
+        "full_height": True,
         "config": {
             "image": svg_url,
             "defaults": {"hover_action": "hover-info", "tap_action": "more-info"},
@@ -206,10 +220,29 @@ def build_dashboard_views(config: dict[str, Any], svg_url_for_floor) -> list[dic
     than a plain base-url string so bridge.py can decide the exact served path
     without this module needing to know its own route layout.
     """
+    included = [floor for floor in config.get("floors", []) if floor.get("devices")]
+
+    # Two floors can share the same name across different buildings (e.g. two
+    # "Ground Floor"s) - the floor name alone is ambiguous as a tab title in that
+    # case, so fall back to "Building - Floor" only for the names that actually
+    # collide, keeping the shorter plain name everywhere else.
+    name_counts: dict[str, int] = {}
+    for floor in included:
+        name = floor.get("name") or "Floor"
+        name_counts[name] = name_counts.get(name, 0) + 1
+
     views: list[dict[str, Any]] = []
-    for floor in config.get("floors", []):
-        if not floor.get("devices"):
-            continue
-        card = build_floor_card_config(floor, svg_url_for_floor(floor["id"]))
-        views.append({"title": floor.get("name") or "Floor", "path": _safe_id(floor["id"]), "cards": [card]})
+    for floor in included:
+        name = floor.get("name") or "Floor"
+        if name_counts[name] > 1:
+            building_name = floor.get("buildingName") or ""
+            title = f"{building_name} - {name}" if building_name else name
+        else:
+            title = name
+        card = build_floor_card_config(floor, svg_url_for_floor(floor["id"]), title)
+        # "panel" makes the single card fill the entire view edge-to-edge (full width
+        # and height) instead of the default masonry layout, which only gives each
+        # card one narrow column and otherwise leaves the rest of the view empty -
+        # exactly what each of these one-card-per-floor views needs.
+        views.append({"title": title, "path": _safe_id(floor["id"]), "type": "panel", "cards": [card]})
     return views

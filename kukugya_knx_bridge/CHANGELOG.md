@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.12
+
+- floorplan dashboard: fix the floorplan rendering tiny in a mostly-empty view — the generated SVG now sets explicit `width="100%" height="100%"` (previously viewBox-only, which browsers render at a small default box when inlined), the card sets `full_height: true`, and each floor's view uses `type: "panel"` instead of masonry so the single floorplan card fills the whole view edge-to-edge
+
+## 0.1.11
+
+- floorplan dashboard: use "Building - Floor" as the tab title only when two floors share the same name across different buildings, otherwise keep the plain floor name
+
 ## 0.1.10
 
 - add a floorplan-based Home Assistant dashboard generator: `POST /floorplan/import` accepts a Kukugya floorplan export and automatically creates/updates a real "Kukugya Floorplan" Lovelace dashboard (one view per floor) using the vendored `ha-floorplan` custom card, pushed via the add-on's existing authenticated Home Assistant websocket connection — no HACS install, no manual YAML paste
