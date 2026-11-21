@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.1
+
+- version bump only - a previous publish of this same diorama replacement had already gone out as 0.2.0 with no further content change recorded in this file, so Home Assistant never surfaced an update; this bump (+ the decorations work below) is what actually ships
+
 ## 0.2.0
 
 - **Replaces the floorplan dashboard with a diorama dashboard**, per explicit user decision: the hand-rolled 2D SVG + `ha-floorplan` card is gone, replaced by the actively-maintained, polished 3D isometric [ha-diorama](https://github.com/CarlesRojas/ha-diorama) card (vendored `card.js` v1.11.1, `static/ha-diorama/`)
