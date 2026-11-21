@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.15
+
+- floorplan dashboard: bump the diagnostic `log_level`/`console_log_level` from `warning` to `debug` so the browser console also shows a "STATE `<entity_id>`: `<state>` (initial load)" line for every entity that bound successfully, not just "Cannot find ..." warnings for the ones that didn't
+
 ## 0.1.14
 
 - floorplan dashboard: where an opening spans floor-to-ceiling (a real absence of wall, not a door/window), render neither the opening symbol nor the wall line for that span — wall centerlines are now computed per-room on the Kukugya export side (`floorplanDashboardConfig.ts`'s `buildWallSegmentsWithGaps`, reusing `buildRoomWallSegments`/`resolveWallHeightM`/`computeOpeningGeometry`) and drawn as separate `<line class="kg-wall">` pieces instead of the room polygon's own stroke

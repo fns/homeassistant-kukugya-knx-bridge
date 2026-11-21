@@ -221,13 +221,17 @@ def build_floor_card_config(floor: dict[str, Any], svg_url: str, title: str | No
         "full_height": True,
         "config": {
             "image": svg_url,
-            # Temporary diagnostic aid: ha-floorplan's own internal warnings (e.g.
-            # "Cannot find element 'device-x' in SVG file") only reach the browser
-            # console when console_log_level is set - without it they're swallowed
-            # into the card's own hidden in-SVG log overlay. Remove once entity/click
-            # binding is confirmed working, to stop spamming the console.
-            "log_level": "warning",
-            "console_log_level": "warning",
+            # Temporary diagnostic aid: ha-floorplan's own internal log messages only
+            # reach the browser console when (console_)log_level is set - without it
+            # they're swallowed into the card's own hidden in-SVG log overlay.
+            # "debug" is the most verbose level (logLevelGroups in ha-floorplan's own
+            # Logger: debug includes info/warning/error too) - this also surfaces a
+            # "STATE <entity_id>: <state> (initial load)" line for every entity that
+            # WAS found/bound successfully, not just the "Cannot find ..." warnings
+            # for the ones that weren't. Remove once entity/click binding is confirmed
+            # solid, to stop spamming the console.
+            "log_level": "debug",
+            "console_log_level": "debug",
             "defaults": {"hover_action": "hover-info", "tap_action": "more-info"},
             "rules": rules,
         },
