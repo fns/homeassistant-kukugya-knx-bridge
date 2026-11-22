@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.3
+
+- every solid (non-opening) wall run now also gets a `half_wall` decoration - a partial mitigation for ha-diorama having no wall rendering at all; capped at that decoration's own 1.6m catalog max height, so it only ever reads as a knee-height partition, never a true wall
+- a room can now carry a `floor` field (`material`/`color`) when its Kukugya Room/Floor floor material is configured (Hierarchy properties - new "Floor material" column) - passed straight through to ha-diorama's own `RoomConfig.floor`, same 5 material values, no translation needed
+
 ## 0.2.1
 
 - version bump only - a previous publish of this same diorama replacement had already gone out as 0.2.0 with no further content change recorded in this file, so Home Assistant never surfaced an update; this bump (+ the decorations work below) is what actually ships

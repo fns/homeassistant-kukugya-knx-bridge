@@ -34,6 +34,15 @@ a fixed theme constant with no per-room override in its schema. Kukugya's generi
 "Objects" layer (furniture/equipment boxes) is deliberately NOT exported either -
 it only carries a free-text name and raw box dimensions, no finite type enum to
 map onto ha-diorama's furniture catalog with any confidence.
+
+Every solid (non-opening) wall run also gets a `half_wall` decoration - ha-diorama has
+no wall rendering of its own at all (every room is just a flat floor slab), so this is
+a partial mitigation, not a real wall; `half_wall`'s own catalog caps at 1.6m tall, so
+it only ever reads as a knee-height partition.
+
+A room may also carry a `floor` field ({"material": ..., "color": ...}) when its
+Room/Floor.floorMaterial is configured in Kukugya - passed straight through to
+ha-diorama's own RoomConfig.floor, no translation needed (same 5 material values).
 """
 from __future__ import annotations
 
@@ -84,6 +93,7 @@ def build_card_config(building: dict[str, Any]) -> dict[str, Any]:
             "floor_id": room["floorId"],
             "name": room.get("name") or room["id"],
             "points": [[pt[0], pt[1]] for pt in room.get("points", [])],
+            **({"floor": room["floor"]} if room.get("floor") else {}),
         }
         for room in building.get("rooms", [])
         if room.get("points")
